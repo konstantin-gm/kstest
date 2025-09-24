@@ -7,11 +7,14 @@ import numpy as np
 import psycopg2
 from psycopg2 import OperationalError
 from PyQt5.QtCore import QDateTime, Qt
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
     QDateTimeEdit,
     QFormLayout,
+    QFrame,
     QGroupBox,
+    QHBoxLayout,
     QLineEdit,
     QLabel,
     QMainWindow,
@@ -49,36 +52,200 @@ class KSTesterWindow(QMainWindow):
         self.generated_phase = {}
 
         self._build_ui()
+        self._apply_theme()
         self._load_config()
+
 
     def _build_ui(self):
         central = QWidget(self)
+        central.setObjectName("CentralWidget")
+
         layout = QVBoxLayout(central)
-        layout.setSpacing(12)
+        layout.setContentsMargins(32, 28, 32, 28)
+        layout.setSpacing(20)
 
-        self.status_label = QLabel("Not connected", self)
-        self.status_label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(self.status_label)
-
+        layout.addWidget(self._build_header())
+        layout.addWidget(self._build_status_card())
         layout.addWidget(self._build_time_range_box())
         layout.addWidget(self._build_signal_box("Reference", "ref"))
         layout.addWidget(self._build_signal_box("Measurement 1", "meas1"))
         layout.addWidget(self._build_signal_box("Measurement 2", "meas2"))
 
         self.generate_button = QPushButton("Generate measurements", self)
+        self.generate_button.setObjectName("PrimaryButton")
+        self.generate_button.setCursor(Qt.PointingHandCursor)
         self.generate_button.clicked.connect(self._on_generate_measurements)
-        layout.addWidget(self.generate_button)
 
         self.delete_button = QPushButton("Delete measurements from DB", self)
+        self.delete_button.setObjectName("DangerButton")
+        self.delete_button.setCursor(Qt.PointingHandCursor)
         self.delete_button.clicked.connect(self._on_delete_measurements)
-        layout.addWidget(self.delete_button)
+
+        button_row = QHBoxLayout()
+        button_row.setSpacing(12)
+        button_row.addStretch()
+        button_row.addWidget(self.generate_button)
+        button_row.addWidget(self.delete_button)
 
         layout.addStretch()
+        layout.addLayout(button_row)
+
         self.setCentralWidget(central)
 
+    def _build_header(self):
+        header = QFrame(self)
+        header.setObjectName("HeaderCard")
+
+        header_layout = QVBoxLayout(header)
+        header_layout.setContentsMargins(20, 18, 20, 20)
+        header_layout.setSpacing(6)
+
+        title = QLabel("KS Tester", header)
+        title.setObjectName("HeaderTitle")
+        title_font = QFont(self.font())
+        title_font.setPointSize(title_font.pointSize() + 8)
+        title_font.setBold(True)
+        title.setFont(title_font)
+
+        subtitle = QLabel(
+            "Generate synthetic phase signals and manage database uploads.",
+            header,
+        )
+        subtitle.setObjectName("HeaderSubtitle")
+        subtitle.setWordWrap(True)
+
+        header_layout.addWidget(title)
+        header_layout.addWidget(subtitle)
+
+        return header
+
+    def _build_status_card(self):
+        card = QFrame(self)
+        card.setObjectName("StatusCard")
+
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(18, 12, 18, 18)
+        card_layout.setSpacing(6)
+
+        title = QLabel("Current status", card)
+        title.setObjectName("StatusTitle")
+
+        self.status_label = QLabel("Not connected", card)
+        self.status_label.setObjectName("StatusValue")
+        self.status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        self.status_label.setWordWrap(True)
+
+        card_layout.addWidget(title)
+        card_layout.addWidget(self.status_label)
+
+        return card
+
+    def _apply_theme(self):
+        base_font = QFont(self.font())
+        if base_font.pointSize() < 10:
+            base_font.setPointSize(10)
+        self.setFont(base_font)
+
+        self.setStyleSheet(
+            '''
+            QWidget#CentralWidget {
+                background-color: #f5f7fb;
+            }
+            QFrame#HeaderCard,
+            QFrame#StatusCard,
+            QGroupBox {
+                background-color: #ffffff;
+                border-radius: 12px;
+                border: 1px solid #d7dce5;
+            }
+            QFrame#HeaderCard {
+                border: none;
+                background-color: qlineargradient(
+                    spread:pad, x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #2d6cdf, stop:1 #3556b1
+                );
+            }
+            QFrame#HeaderCard QLabel {
+                color: #ffffff;
+            }
+            QLabel#HeaderTitle {
+                font-size: 22px;
+                font-weight: 600;
+                margin-bottom: 4px;
+            }
+            QLabel#HeaderSubtitle {
+                font-size: 12px;
+                color: rgba(255, 255, 255, 210);
+            }
+            QLabel#StatusTitle {
+                font-size: 11px;
+                font-weight: 600;
+                color: #52697a;
+            }
+            QLabel#StatusValue {
+                font-size: 14px;
+                font-weight: 500;
+            }
+            QGroupBox {
+                padding-top: 20px;
+                margin-top: 12px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                padding: 0 10px;
+                color: #2b3750;
+                font-weight: 600;
+            }
+            QLineEdit,
+            QDateTimeEdit {
+                border: 1px solid #c6ccd8;
+                border-radius: 6px;
+                padding: 6px 8px;
+                background-color: #fdfdff;
+            }
+            QLineEdit:focus,
+            QDateTimeEdit:focus {
+                border: 1px solid #2d6cdf;
+            }
+            QDateTimeEdit::up-button,
+            QDateTimeEdit::down-button {
+                width: 16px;
+            }
+            QPushButton {
+                padding: 10px 18px;
+                border-radius: 8px;
+                border: none;
+                font-weight: 600;
+                background-color: #3e4c59;
+                color: #ffffff;
+            }
+            QPushButton:hover {
+                background-color: #52697a;
+            }
+            QPushButton#PrimaryButton {
+                background-color: #2d6cdf;
+            }
+            QPushButton#PrimaryButton:hover {
+                background-color: #264da8;
+            }
+            QPushButton#DangerButton {
+                background-color: #d64545;
+            }
+            QPushButton#DangerButton:hover {
+                background-color: #b23a3a;
+            }
+            QPushButton:pressed {
+                background-color: #1f2933;
+            }
+            '''
+        )
     def _build_time_range_box(self):
         box = QGroupBox("Time Range", self)
         form = QFormLayout(box)
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.start_datetime = QDateTimeEdit(QDateTime.currentDateTime(), self)
         self.start_datetime.setCalendarPopup(True)
@@ -96,6 +263,9 @@ class KSTesterWindow(QMainWindow):
     def _build_signal_box(self, title, key):
         box = QGroupBox(f"{title} Signal", self)
         form = QFormLayout(box)
+        form.setSpacing(10)
+        form.setLabelAlignment(Qt.AlignRight)
+        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         init_phase = self._create_line_edit()
         form.addRow("Initial phase:", init_phase)
