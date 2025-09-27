@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import psycopg2
 from psycopg2 import OperationalError
-from PyQt5.QtCore import QDateTime, Qt
+from PyQt5.QtCore import QDateTime, Qt, QTimer
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
@@ -52,6 +52,14 @@ class KSTesterWindow(QMainWindow):
         self._connection = None
         self.generated_time = None
         self.generated_phase = {}
+
+        self._real_time_models = {}
+        self._real_time_next_timestamp = None
+        self._real_time_dt = None
+
+        self.real_time_timer = QTimer(self)
+        self.real_time_timer.setSingleShot(False)
+        self.real_time_timer.timeout.connect(self._on_real_time_timer_tick)
 
         self._build_ui()
         self._apply_theme()
@@ -364,6 +372,7 @@ class KSTesterWindow(QMainWindow):
             "start_datetime": self.start_datetime.dateTime().toString(Qt.ISODate),
             "stop_datetime": self.stop_datetime.dateTime().toString(Qt.ISODate),
             "dt": self.dt_edit.text().strip(),
+            "real_time": self.real_time_checkbox.isChecked(),
             "signals": signals,
         }
 
@@ -393,6 +402,10 @@ class KSTesterWindow(QMainWindow):
         if dt_text is not None:
             self.dt_edit.setText(str(dt_text))
 
+        real_time_enabled = data.get("real_time")
+        if real_time_enabled is not None:
+            self.real_time_checkbox.setChecked(bool(real_time_enabled))
+
         signals = data.get("signals", {})
         for key in ("ref", "meas1", "meas2"):
             controls = getattr(self, f"{key}_controls")
@@ -412,10 +425,93 @@ class KSTesterWindow(QMainWindow):
 
     def _on_real_time_toggled(self, checked):
         self.stop_datetime.setDisabled(checked)
+        if checked:
+            self.stop_datetime.setDateTime(QDateTime.currentDateTime())
+        else:
+            self._stop_real_time_generation()
+
+    def _stop_real_time_generation(self):
+        if getattr(self, "real_time_timer", None) is not None and self.real_time_timer.isActive():
+            self.real_time_timer.stop()
+        self._real_time_models = {}
+        self._real_time_next_timestamp = None
+        self._real_time_dt = None
+        if self._connection is not None and self._connection.closed == 0:
+            self.close_db_connection()
+
+    def _start_real_time_generation(self, models, dt_value, last_timestamp):
+        if not models:
+            return
+        self._real_time_models = models
+        self._real_time_dt = dt_value
+        self._real_time_next_timestamp = last_timestamp + timedelta(seconds=dt_value)
+        interval_ms = max(1, int(round(dt_value * 1000)))
+        self.real_time_timer.start(interval_ms)
+
+    def _on_real_time_timer_tick(self):
+        if not self._real_time_models or self._real_time_dt is None or self._real_time_next_timestamp is None:
+            self._stop_real_time_generation()
+            return
+
+        phases = {}
+        for key, model in self._real_time_models.items():
+            sample = model.generate(1)
+            phases[key] = float(sample[0]) if len(sample) else 0.0
+
+        phase_ref = phases.get("ref")
+        if phase_ref is None:
+            self._stop_real_time_generation()
+            return
+
+        diff_meas1 = phases.get("meas1", 0.0) - phase_ref
+        diff_meas2 = phases.get("meas2", 0.0) - phase_ref
+
+        meas1_timestamp = self._real_time_next_timestamp
+        meas2_timestamp = meas1_timestamp + timedelta(seconds=MEAS2_TIME_SHIFT_SECONDS)
+
+        if not self._connect_to_database():
+            self._stop_real_time_generation()
+            self.status_label.setText("Real-time generation stopped: database unavailable")
+            return
+
+        insert_sql = "INSERT INTO raw_phase (timestamp, phase, pair_id) VALUES (%s, %s, %s)"
+        records = [
+            (meas1_timestamp, float(diff_meas1), PAIR_ID_MEAS1_REF),
+            (meas2_timestamp, float(diff_meas2), PAIR_ID_MEAS2_REF),
+        ]
+
+        try:
+            with self._connection.cursor() as cur:
+                cur.executemany(insert_sql, records)
+            self._connection.commit()
+        except Exception as exc:  # pylint: disable=broad-except
+            if self._connection is not None:
+                self._connection.rollback()
+            QMessageBox.critical(
+                self,
+                "Database Error",
+                f"Failed to append real-time data to the database.\n\n{exc}",
+            )
+            self._stop_real_time_generation()
+            return
+
+        self._real_time_next_timestamp = meas1_timestamp + timedelta(seconds=self._real_time_dt)
+        self.status_label.setText(
+            f"Real-time mode active. Last saved sample at {meas1_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+        )
 
     def _on_generate_measurements(self):
+        self._stop_real_time_generation()
+
+        real_time_mode = self.real_time_checkbox.isChecked()
+
         start_dt = self.start_datetime.dateTime().toPyDateTime()
-        stop_dt = self.stop_datetime.dateTime().toPyDateTime()
+        if real_time_mode:
+            current_qdt = QDateTime.currentDateTime()
+            self.stop_datetime.setDateTime(current_qdt)
+            stop_dt = current_qdt.toPyDateTime()
+        else:
+            stop_dt = self.stop_datetime.dateTime().toPyDateTime()
 
         if stop_dt <= start_dt:
             QMessageBox.warning(
@@ -465,6 +561,7 @@ class KSTesterWindow(QMainWindow):
         self.generated_phase = {}
         self.generated_time = np.arange(N, dtype=float) * dt_value
 
+        realtime_models = {}
         for key, _ in signal_configs:
             params = signal_params[key]
             freq = params["init_frequency"] #or 2e-15
@@ -473,6 +570,8 @@ class KSTesterWindow(QMainWindow):
 
             model = Model2d3d(q, dt_value, phase0, freq, drift)
             self.generated_phase[key] = model.generate(N)
+            if real_time_mode:
+                realtime_models[key] = model
 
         timestamps_meas1 = [start_dt + timedelta(seconds=i * dt_value) for i in range(N)]
         timestamps_meas2 = [
@@ -546,10 +645,20 @@ class KSTesterWindow(QMainWindow):
             self.close_db_connection()
             return
 
-        self.close_db_connection()
-        self.status_label.setText(
-            f"Generated and saved {N} samples for pair IDs 27 & 28 (connection closed)"
-        )
+        if real_time_mode:
+            self._start_real_time_generation(
+                realtime_models,
+                dt_value,
+                timestamps_meas1[-1],
+            )
+            self.status_label.setText(
+                f"Real-time mode active after seeding {N} samples (dt = {dt_value:g} s)"
+            )
+        else:
+            self.close_db_connection()
+            self.status_label.setText(
+                f"Generated and saved {N} samples for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF} (connection closed)"
+            )
 
     def _on_delete_measurements(self):
         self._save_config()
@@ -563,7 +672,9 @@ class KSTesterWindow(QMainWindow):
             with self._connection.cursor() as cur:
                 cur.execute(delete_sql, (PAIR_ID_MEAS1_REF, PAIR_ID_MEAS2_REF))
             self._connection.commit()
-            self.status_label.setText("Deleted measurements for pair IDs 27 & 28")
+            self.status_label.setText(
+                f"Deleted measurements for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF}"
+            )
         except Exception as exc:  # pylint: disable=broad-except
             if self._connection is not None:
                 self._connection.rollback()
@@ -582,6 +693,7 @@ class KSTesterWindow(QMainWindow):
         self._connection = None
 
     def closeEvent(self, event):
+        self._stop_real_time_generation()
         self._save_config()
         self.close_db_connection()
         super().closeEvent(event)

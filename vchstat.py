@@ -192,7 +192,7 @@ def getF3d(dt):
 
 class Model2d3d:
 
-  def __init__(self, noise, dt, phase, freq, drift):
+  def __init__(self, noise, dt, phase0, freq0, drift):
     '''
     noise - [q0, q1, q2] интенсивности шумов (белый фазовый, белый частотный, 
     шум случайных блужданий частоты)
@@ -219,9 +219,11 @@ class Model2d3d:
       self.Q = covar_by_noise2d3d(self.q[1:], dt)
       self.L = linalg.cholesky(self.Q)    
     
-    self.dt = dt
-    self.phase0 = phase
-    self.freq = freq
+    self.dt = dt    
+        
+    self.X = np.zeros(2)
+    self.X[0] = phase0
+    self.X[1] = freq0
     self.drift = drift
 
   def generate(self, N):
@@ -232,24 +234,21 @@ class Model2d3d:
       phase - отчсчеты фазы numpy.array(N)
     '''
     
-    self.phase = np.zeros(N)                    
+    self.phase = np.zeros(N)
     sq0 = np.sqrt(self.q[0])
-        
-    X = np.zeros(2)
-    X[0] = self.phase0
-    X[1] = self.freq 
-    if self.nd == 1:       
-      for i in range(N):     
-        X = self.F@X + self.D*self.drift            
+    
+    if self.nd == 1:
+      for i in range(N):
+        self.X = self.F@self.X + self.D*self.drift
         wpn = np.random.randn(1)*sq0
-        self.phase[i] = X[0] + wpn[0]
+        self.phase[i] = self.X[0] + wpn[0]
     else:
       for i in range(N):
-        w = np.random.randn(2)            
-        X = self.F@X + self.L@w + self.D*self.drift            
+        w = np.random.randn(self.nd-1)
+        self.X = self.F@self.X + self.L@w + self.D*self.drift
         wpn = np.random.randn(1)*sq0
-        self.phase[i] = X[0] + wpn[0]
-                            
+        self.phase[i] = self.X[0] + wpn[0]
+
     return self.phase
 
 
