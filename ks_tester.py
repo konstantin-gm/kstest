@@ -10,6 +10,7 @@ from PyQt5.QtCore import QDateTime, Qt, QTimer
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
+    QComboBox,
     QCheckBox,
     QDateTimeEdit,
     QFormLayout,
@@ -40,6 +41,12 @@ PAIR_ID_MEAS2_REF = 30
 MEAS2_TIME_SHIFT_SECONDS = 10
 CONFIG_PATH = Path(__file__).with_name("ks_tester_config.json")
 
+SIGNAL_LABELS = {
+    "ref": "Reference",
+    "meas1": "Measurement 1",
+    "meas2": "Measurement 2",
+}
+
 
 class KSTesterWindow(QMainWindow):
     """Main window that manages measurement parameters and DB connection."""
@@ -47,7 +54,7 @@ class KSTesterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("KS Tester")
-        self.setMinimumSize(640, 520)
+        self.setMinimumSize(640, 860)
 
         self._connection = None
         self.generated_time = None
@@ -56,6 +63,7 @@ class KSTesterWindow(QMainWindow):
         self._real_time_models = {}
         self._real_time_next_timestamp = None
         self._real_time_dt = None
+        self._pending_outliers = {}
 
         self.real_time_timer = QTimer(self)
         self.real_time_timer.setSingleShot(False)
@@ -306,6 +314,39 @@ class KSTesterWindow(QMainWindow):
             },
         )
 
+        outlier_label = QLabel("Outlier type:")
+        grid.addWidget(outlier_label, 1, 0)
+
+        outlier_combo = QComboBox()
+        outlier_combo.addItem("Phase spike", "phase_spike")
+        outlier_combo.addItem("Phase shift", "phase_shift")
+        outlier_combo.addItem("Frequency shift", "frequency_shift")
+        outlier_combo.addItem("Drift change", "drift_change")
+        grid.addWidget(outlier_combo, 1, 1)
+
+        magnitude_label = QLabel("Magnitude:")
+        grid.addWidget(magnitude_label, 1, 2)
+
+        magnitude_edit = self._create_line_edit("0")
+        grid.addWidget(magnitude_edit, 1, 3)
+
+        apply_button = QPushButton("Apply outlier")
+        apply_button.setCursor(Qt.PointingHandCursor)
+        apply_button.clicked.connect(
+            lambda _, signal_key=key: self._on_apply_outlier(signal_key)
+        )
+        grid.addWidget(apply_button, 1, 4, 1, 2)
+
+        setattr(
+            self,
+            f"{key}_outlier_controls",
+            {
+                "type": outlier_combo,
+                "magnitude": magnitude_edit,
+                "button": apply_button,
+            },
+        )
+
         return box
 
     @staticmethod
@@ -436,6 +477,7 @@ class KSTesterWindow(QMainWindow):
         self._real_time_models = {}
         self._real_time_next_timestamp = None
         self._real_time_dt = None
+        self._pending_outliers.clear()
         if self._connection is not None and self._connection.closed == 0:
             self.close_db_connection()
 
@@ -448,15 +490,67 @@ class KSTesterWindow(QMainWindow):
         interval_ms = max(1, int(round(dt_value * 1000)))
         self.real_time_timer.start(interval_ms)
 
+    def _on_apply_outlier(self, key):
+        controls = getattr(self, f"{key}_outlier_controls", None)
+        if not controls:
+            return
+
+        label = SIGNAL_LABELS.get(key, key)
+        magnitude = self._parse_float(
+            controls["magnitude"],
+            f"{label} outlier magnitude",
+        )
+        if magnitude is None:
+            return
+
+        outlier_type = controls["type"].currentData()
+        outlier_label_text = controls["type"].currentText()
+        self._pending_outliers[key] = {
+            "type": outlier_type,
+            "value": magnitude,
+            "display": outlier_label_text,
+        }
+
+        if not self.real_time_timer.isActive():
+            self.status_label.setText(
+                f"Queued {outlier_label_text.lower()} for {label}; start real-time to apply"
+            )
+        else:
+            self.status_label.setText(
+                f"Queued {outlier_label_text.lower()} for {label}; applying on next sample"
+            )
+
     def _on_real_time_timer_tick(self):
         if not self._real_time_models or self._real_time_dt is None or self._real_time_next_timestamp is None:
             self._stop_real_time_generation()
             return
 
         phases = {}
+        applied_outliers = []
         for key, model in self._real_time_models.items():
+            pending = self._pending_outliers.pop(key, None)
+            spike_adjust = 0.0
+            if pending:
+                value = pending["value"]
+                outlier_type = pending["type"]
+                if outlier_type == "phase_shift":
+                    model.X[0] += value
+                elif outlier_type == "frequency_shift":
+                    model.X[1] += value
+                elif outlier_type == "drift_change":
+                    model.drift += value
+                elif outlier_type == "phase_spike":
+                    spike_adjust = value
+                display = pending.get("display") or outlier_type.replace("_", " ")
+                applied_outliers.append(
+                    f"{SIGNAL_LABELS.get(key, key)} {display.lower()}"
+                )
+
             sample = model.generate(1)
-            phases[key] = float(sample[0]) if len(sample) else 0.0
+            sample_value = float(sample[0]) if len(sample) else 0.0
+            if spike_adjust:
+                sample_value += spike_adjust
+            phases[key] = sample_value
 
         phase_ref = phases.get("ref")
         if phase_ref is None:
@@ -496,9 +590,10 @@ class KSTesterWindow(QMainWindow):
             return
 
         self._real_time_next_timestamp = meas1_timestamp + timedelta(seconds=self._real_time_dt)
-        self.status_label.setText(
-            f"Real-time mode active. Last saved sample at {meas1_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
-        )
+        status = f"Real-time mode active. Last saved sample at {meas1_timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+        if applied_outliers:
+            status += f"; applied {'; '.join(applied_outliers)}"
+        self.status_label.setText(status)
 
     def _on_generate_measurements(self):
         self._stop_real_time_generation()
@@ -531,7 +626,7 @@ class KSTesterWindow(QMainWindow):
             return
 
         total_seconds = (stop_dt - start_dt).total_seconds()
-        N = int(total_seconds // dt_value)
+        N = int(total_seconds // dt_value) + 1
         if N <= 0:
             QMessageBox.warning(
                 self,
