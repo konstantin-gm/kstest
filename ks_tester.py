@@ -664,7 +664,8 @@ class KSTesterWindow(QMainWindow):
             phase0 = params["init_phase"]
 
             model = Model2d3d(q, dt_value, phase0, freq, drift)
-            self.generated_phase[key] = model.generate(N)
+            self.generated_phase[key], freq_end = model.generate(N)
+            print(freq_end)
             if real_time_mode:
                 realtime_models[key] = model
 

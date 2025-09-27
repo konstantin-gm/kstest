@@ -5,6 +5,7 @@ Created on Sat May 20 12:03:51 2023
 
 @author: konstantin
 """
+import random
 import numpy as np
 from scipy import linalg
 import matplotlib.pyplot as plt
@@ -224,9 +225,9 @@ class Model2d3d:
     self.X = np.zeros(2)
     self.X[0] = phase0
     self.X[1] = freq0
-    self.drift = drift
-
-  def generate(self, N):
+    self.drift = drift    
+  
+  def generate(self, N, NofCtrls=0):
     '''
     Вход:
       N - количество отчетов
@@ -237,6 +238,8 @@ class Model2d3d:
     self.phase = np.zeros(N)
     sq0 = np.sqrt(self.q[0])
     
+    controls = random.sample(range(1, N), NofCtrls)
+    
     if self.nd == 1:
       for i in range(N):
         self.X = self.F@self.X + self.D*self.drift
@@ -246,10 +249,12 @@ class Model2d3d:
       for i in range(N):
         w = np.random.randn(self.nd-1)
         self.X = self.F@self.X + self.L@w + self.D*self.drift
+        if i in controls:
+            self.X[1] += random.uniform(-1e-11, 1e-11)
         wpn = np.random.randn(1)*sq0
         self.phase[i] = self.X[0] + wpn[0]
 
-    return self.phase
+    return self.phase, self.X[1]
 
 
 class Kalman:
