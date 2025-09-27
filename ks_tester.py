@@ -54,7 +54,8 @@ class KSTesterWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("KS Tester")
-        self.setMinimumSize(640, 860)
+        self.setMinimumSize(700, 860)
+        self.setMaximumSize(800, 860)
 
         self._connection = None
         self.generated_time = None
@@ -72,7 +73,7 @@ class KSTesterWindow(QMainWindow):
 
         self._build_ui()
         self._apply_theme()
-        self._load_config()
+        self._load_config()          
 
 
     def _build_ui(self):
@@ -341,7 +342,7 @@ class KSTesterWindow(QMainWindow):
         apply_button.clicked.connect(
             lambda _, signal_key=key: self._on_apply_outlier(signal_key)
         )
-        grid.addWidget(apply_button, 1, 4, 1, 2)
+        grid.addWidget(apply_button, 1, 4, 1, 4)
 
         setattr(
             self,
