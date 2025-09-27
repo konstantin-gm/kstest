@@ -238,23 +238,28 @@ class Model2d3d:
     self.phase = np.zeros(N)
     sq0 = np.sqrt(self.q[0])
     
-    controls = random.sample(range(1, N), NofCtrls)
+    t_controls = random.sample(range(1, N), NofCtrls)
+    u_controls = []
     
     if self.nd == 1:
       for i in range(N):
         self.X = self.F@self.X + self.D*self.drift
+        if i in t_controls:
+            u = 1.e-11 #random.uniform(-1e-11, 1e-11)
+            u_controls.append(u)
+            self.X[1] += u
         wpn = np.random.randn(1)*sq0
         self.phase[i] = self.X[0] + wpn[0]
     else:
       for i in range(N):
         w = np.random.randn(self.nd-1)
         self.X = self.F@self.X + self.L@w + self.D*self.drift
-        if i in controls:
-            self.X[1] += random.uniform(-1e-11, 1e-11)
+        if i in t_controls:
+            self.X[1] += 1.e-11 #random.uniform(-1e-11, 1e-11)
         wpn = np.random.randn(1)*sq0
         self.phase[i] = self.X[0] + wpn[0]
 
-    return self.phase, self.X[1]
+    return self.phase, self.X[1], t_controls, u_controls
 
 
 class Kalman:

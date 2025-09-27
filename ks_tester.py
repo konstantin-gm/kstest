@@ -706,7 +706,8 @@ class KSTesterWindow(QMainWindow):
             controls_count = int(params.get("controls", 0))
 
             model = Model2d3d(q, dt_value, phase0, freq, drift)
-            self.generated_phase[key] = model.generate(N, controls_count)
+            self.generated_phase[key], freq_end, t_ctrl, u_ctrl = model.generate(N, controls_count)
+            print(freq_end)
             self._signal_control_counts[key] = controls_count
             if real_time_mode:
                 realtime_models[key] = model
