@@ -64,6 +64,7 @@ class KSTesterWindow(QMainWindow):
         self._real_time_next_timestamp = None
         self._real_time_dt = None
         self._pending_outliers = {}
+        self._signal_control_counts = {}
 
         self.real_time_timer = QTimer(self)
         self.real_time_timer.setSingleShot(False)
@@ -304,6 +305,10 @@ class KSTesterWindow(QMainWindow):
         grid.addWidget(QLabel("Initial drift:"), 0, 4)
         grid.addWidget(freq_drift, 0, 5)
 
+        controls_edit = self._create_line_edit("0")
+        grid.addWidget(QLabel("Controls:"), 0, 6)
+        grid.addWidget(controls_edit, 0, 7)
+
         setattr(
             self,
             f"{key}_controls",
@@ -311,6 +316,7 @@ class KSTesterWindow(QMainWindow):
                 "init_phase": init_phase,
                 "init_frequency": init_freq,
                 "frequency_drift": freq_drift,
+                "controls": controls_edit,
             },
         )
 
@@ -367,6 +373,33 @@ class KSTesterWindow(QMainWindow):
             widget.setFocus()
             return None
 
+    def _parse_int(self, widget, field_label, minimum=0):
+        text = widget.text().strip()
+        if not text:
+            value = 0
+        else:
+            try:
+                value = int(text)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Invalid Input",
+                    f"{field_label} must be an integer.",
+                )
+                widget.setFocus()
+                return None
+
+        if value < minimum:
+            QMessageBox.warning(
+                self,
+                "Invalid Input",
+                f"{field_label} must be at least {minimum}.",
+            )
+            widget.setFocus()
+            return None
+
+        return value
+
     def _connect_to_database(self):
         """Ensure a database connection exists before generating measurements."""
         if self._connection is not None and self._connection.closed == 0:
@@ -393,8 +426,13 @@ class KSTesterWindow(QMainWindow):
     def _get_signal_parameters(self, key):
         controls = getattr(self, f"{key}_controls")
         params = {}
+        signal_name = SIGNAL_LABELS.get(key, key)
         for label, widget in controls.items():
-            value = self._parse_float(widget, f"{key} {label.replace('_', ' ')}")
+            field_label = f"{signal_name} {label.replace('_', ' ')}"
+            if label == "controls":
+                value = self._parse_int(widget, field_label)
+            else:
+                value = self._parse_float(widget, field_label)
             if value is None:
                 return None
             params[label] = value
@@ -478,6 +516,7 @@ class KSTesterWindow(QMainWindow):
         self._real_time_next_timestamp = None
         self._real_time_dt = None
         self._pending_outliers.clear()
+        self._signal_control_counts = {}
         if self._connection is not None and self._connection.closed == 0:
             self.close_db_connection()
 
@@ -657,15 +696,17 @@ class KSTesterWindow(QMainWindow):
         self.generated_time = np.arange(N, dtype=float) * dt_value
 
         realtime_models = {}
+        self._signal_control_counts = {}
         for key, _ in signal_configs:
             params = signal_params[key]
             freq = params["init_frequency"] #or 2e-15
             drift = params["frequency_drift"] / 86400. #or (5.0e-16 / 86400.0)
             phase0 = params["init_phase"]
+            controls_count = int(params.get("controls", 0))
 
             model = Model2d3d(q, dt_value, phase0, freq, drift)
-            self.generated_phase[key], freq_end = model.generate(N)
-            print(freq_end)
+            self.generated_phase[key] = model.generate(N, controls_count)
+            self._signal_control_counts[key] = controls_count
             if real_time_mode:
                 realtime_models[key] = model
 
