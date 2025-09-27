@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QApplication,
     QDateTimeEdit,
     QFormLayout,
+    QGridLayout,
     QFrame,
     QGroupBox,
     QHBoxLayout,
@@ -242,39 +243,43 @@ class KSTesterWindow(QMainWindow):
         )
     def _build_time_range_box(self):
         box = QGroupBox("Time Range", self)
-        form = QFormLayout(box)
-        form.setSpacing(10)
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        grid = QGridLayout(box)
+        grid.setSpacing(10)        
+        grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         self.start_datetime = QDateTimeEdit(QDateTime.currentDateTime(), self)
         self.start_datetime.setCalendarPopup(True)
-        form.addRow("Start:", self.start_datetime)
+        grid.addWidget(QLabel("Start:"), 0, 0)
+        grid.addWidget(self.start_datetime, 0, 1)
 
         self.stop_datetime = QDateTimeEdit(QDateTime.currentDateTime(), self)
-        self.stop_datetime.setCalendarPopup(True)
-        form.addRow("Stop:", self.stop_datetime)
+        self.stop_datetime.setCalendarPopup(True)        
+        grid.addWidget(QLabel("Stop:"), 0, 2)
+        grid.addWidget(self.stop_datetime, 0, 3)
 
         self.dt_edit = self._create_line_edit("100")
-        form.addRow("Interval dt (s):", self.dt_edit)
+        grid.addWidget(QLabel("Interval dt (s):"), 0, 4)
+        grid.addWidget(self.dt_edit, 0, 5)
 
         return box
 
     def _build_signal_box(self, title, key):
         box = QGroupBox(f"{title} Signal", self)
-        form = QFormLayout(box)
-        form.setSpacing(10)
-        form.setLabelAlignment(Qt.AlignRight)
-        form.setFormAlignment(Qt.AlignLeft | Qt.AlignTop)
+        grid = QGridLayout(box)
+        grid.setSpacing(10)        
+        grid.setAlignment(Qt.AlignLeft | Qt.AlignTop)
 
         init_phase = self._create_line_edit()
-        form.addRow("Initial phase:", init_phase)
+        grid.addWidget(QLabel("Initial phase:"), 0, 0)
+        grid.addWidget(init_phase, 0, 1)
 
-        init_freq = self._create_line_edit()
-        form.addRow("Initial frequency:", init_freq)
+        init_freq = self._create_line_edit()        
+        grid.addWidget(QLabel("Initial frequency:"), 0, 2)
+        grid.addWidget(init_freq, 0, 3)
 
         freq_drift = self._create_line_edit()
-        form.addRow("Frequency drift:", freq_drift)
+        grid.addWidget(QLabel("Initial drift:"), 0, 4)
+        grid.addWidget(freq_drift, 0, 5)
 
         setattr(
             self,
