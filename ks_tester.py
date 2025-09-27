@@ -10,6 +10,7 @@ from PyQt5.QtCore import QDateTime, Qt
 from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import (
     QApplication,
+    QCheckBox,
     QDateTimeEdit,
     QFormLayout,
     QGridLayout,
@@ -252,14 +253,20 @@ class KSTesterWindow(QMainWindow):
         grid.addWidget(QLabel("Start:"), 0, 0)
         grid.addWidget(self.start_datetime, 0, 1)
 
+        self.real_time_checkbox = QCheckBox("Real-time", self)
+        self.real_time_checkbox.toggled.connect(self._on_real_time_toggled)
+        grid.addWidget(self.real_time_checkbox, 0, 2)
+
         self.stop_datetime = QDateTimeEdit(QDateTime.currentDateTime(), self)
-        self.stop_datetime.setCalendarPopup(True)        
-        grid.addWidget(QLabel("Stop:"), 0, 2)
-        grid.addWidget(self.stop_datetime, 0, 3)
+        self.stop_datetime.setCalendarPopup(True)
+        grid.addWidget(QLabel("Stop:"), 0, 3)
+        grid.addWidget(self.stop_datetime, 0, 4)
 
         self.dt_edit = self._create_line_edit("100")
-        grid.addWidget(QLabel("Interval dt (s):"), 0, 4)
-        grid.addWidget(self.dt_edit, 0, 5)
+        grid.addWidget(QLabel("Interval dt (s):"), 0, 5)
+        grid.addWidget(self.dt_edit, 0, 6)
+
+        self._on_real_time_toggled(self.real_time_checkbox.isChecked())
 
         return box
 
@@ -402,6 +409,9 @@ class KSTesterWindow(QMainWindow):
             )
         except OSError as exc:
             print(f"Failed to save config: {exc}")
+
+    def _on_real_time_toggled(self, checked):
+        self.stop_datetime.setDisabled(checked)
 
     def _on_generate_measurements(self):
         start_dt = self.start_datetime.dateTime().toPyDateTime()
