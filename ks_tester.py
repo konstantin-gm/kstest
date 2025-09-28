@@ -47,6 +47,13 @@ SIGNAL_LABELS = {
     "meas2": "Measurement 2",
 }
 
+# Update values with actual signal IDs from the database before running
+CONTROL_SIGNAL_IDS = {
+    "ref": 62,
+    "meas1": 65,
+    "meas2": 66,
+}
+
 
 class KSTesterWindow(QMainWindow):
     """Main window that manages measurement parameters and DB connection."""
@@ -60,6 +67,7 @@ class KSTesterWindow(QMainWindow):
         self._connection = None
         self.generated_time = None
         self.generated_phase = {}
+        self.generated_controls = {}
 
         self._real_time_models = {}
         self._real_time_next_timestamp = None
@@ -695,6 +703,7 @@ class KSTesterWindow(QMainWindow):
 
         self.generated_phase = {}
         self.generated_time = np.arange(N, dtype=float) * dt_value
+        self.generated_controls = {}
 
         realtime_models = {}
         self._signal_control_counts = {}
@@ -710,6 +719,15 @@ class KSTesterWindow(QMainWindow):
             self.generated_phase[key], freq_end, t_ctrl, u_ctrl = model.generate(N, controls_count)
             freqs_end[key] = freq_end
             self._signal_control_counts[key] = controls_count
+            control_indices = list(t_ctrl)
+            control_values = list(u_ctrl)
+            if control_indices and len(control_values) < len(control_indices):
+                missing = len(control_indices) - len(control_values)
+                control_values.extend([1.0e-11] * missing)
+            self.generated_controls[key] = {
+                "indices": control_indices,
+                "values": control_values,
+            }
             if real_time_mode:
                 realtime_models[key] = model
 
@@ -749,11 +767,64 @@ class KSTesterWindow(QMainWindow):
         plt.tight_layout()
         plt.show(block=False)
 
+        missing_signal_keys = [
+            key
+            for key, data in self.generated_controls.items()
+            if data.get("indices") and CONTROL_SIGNAL_IDS.get(key) is None
+        ]
+        if missing_signal_keys:
+            labels = ", ".join(SIGNAL_LABELS.get(key, key) for key in missing_signal_keys)
+            QMessageBox.warning(
+                self,
+                "Signal IDs Required",
+                f"Set control signal IDs for: {labels}.",
+            )
+            self.status_label.setText("Aborted: control signal IDs not configured")
+            return
+
+        control_records = []
+        control_ranges = []
+        for key, data in self.generated_controls.items():
+            indices = data.get("indices") or []
+            values = data.get("values") or []
+            if not indices:
+                continue
+
+            signal_id_value = CONTROL_SIGNAL_IDS.get(key)
+            try:
+                signal_id_value = int(signal_id_value)
+            except (TypeError, ValueError):
+                QMessageBox.warning(
+                    self,
+                    "Invalid Signal ID",
+                    f"Control signal ID for {SIGNAL_LABELS.get(key, key)} must be an integer.",
+                )
+                self.status_label.setText("Aborted: control signal IDs must be integers")
+                return
+
+            timestamps = []
+            for idx, value in zip(indices, values):
+                ts = start_dt + timedelta(seconds=idx * dt_value)
+                if key == "meas2":
+                    ts += timedelta(seconds=MEAS2_TIME_SHIFT_SECONDS)
+                control_value = None if value is None else float(value)
+                control_records.append((ts, control_value, signal_id_value))
+                timestamps.append(ts)
+
+            if timestamps:
+                control_ranges.append((signal_id_value, min(timestamps), max(timestamps)))
+
         if not self._connect_to_database():
             return
 
         insert_sql = "INSERT INTO raw_phase (timestamp, phase, pair_id) VALUES (%s, %s, %s)"
         delete_sql = "DELETE FROM raw_phase WHERE pair_id = %s AND timestamp BETWEEN %s AND %s"
+        control_insert_sql = (
+            "INSERT INTO control (timestamp, u, signal_id) VALUES (%s, %s, %s)"
+        )
+        control_delete_sql = (
+            "DELETE FROM control WHERE signal_id = %s AND timestamp BETWEEN %s AND %s"
+        )
 
         records = []
         for ts, phase in zip(timestamps_meas1, phase_diff_meas1):
@@ -776,7 +847,15 @@ class KSTesterWindow(QMainWindow):
                     delete_sql,
                     (PAIR_ID_MEAS2_REF, start_range_meas2, end_range_meas2),
                 )
+                if control_ranges:
+                    for signal_id_value, range_start, range_end in control_ranges:
+                        cur.execute(
+                            control_delete_sql,
+                            (signal_id_value, range_start, range_end),
+                        )
                 cur.executemany(insert_sql, records)
+                if control_records:
+                    cur.executemany(control_insert_sql, control_records)
             self._connection.commit()
         except Exception as exc:  # pylint: disable=broad-except
             if self._connection is not None:
