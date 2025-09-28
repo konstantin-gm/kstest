@@ -698,6 +698,7 @@ class KSTesterWindow(QMainWindow):
 
         realtime_models = {}
         self._signal_control_counts = {}
+        freqs_end = {}
         for key, _ in signal_configs:
             params = signal_params[key]
             freq = params["init_frequency"] #or 2e-15
@@ -707,7 +708,7 @@ class KSTesterWindow(QMainWindow):
 
             model = Model2d3d(q, dt_value, phase0, freq, drift)
             self.generated_phase[key], freq_end, t_ctrl, u_ctrl = model.generate(N, controls_count)
-            print(freq_end)
+            freqs_end[key] = freq_end
             self._signal_control_counts[key] = controls_count
             if real_time_mode:
                 realtime_models[key] = model
@@ -721,10 +722,14 @@ class KSTesterWindow(QMainWindow):
         phase_ref = self.generated_phase["ref"]
         phase_diff_meas1 = self.generated_phase["meas1"] - phase_ref
         phase_diff_meas2 = self.generated_phase["meas2"] - phase_ref
+        freq_diff_meas1 = freqs_end["meas1"]-freqs_end["ref"]
+        freq_diff_meas2 = freqs_end["meas2"]-freqs_end["ref"]
+
+        freq_str = f", frequencies at the end: meas1-ref={freq_diff_meas1}, meas2-ref={freq_diff_meas2}"
 
         print(f"Generated N = {N} samples with dt = {dt_value} s for 3 signals")
         self.status_label.setText(
-            f"Generated {N} samples for ref/meas1/meas2 (dt = {dt_value:g} s)"
+            f"Generated {N} samples for ref/meas1/meas2 (dt = {dt_value:g} s)" + freq_str
         )
 
         plt.figure("Generated Phase")
@@ -791,12 +796,12 @@ class KSTesterWindow(QMainWindow):
                 timestamps_meas1[-1],
             )
             self.status_label.setText(
-                f"Real-time mode active after seeding {N} samples (dt = {dt_value:g} s)"
+                f"Real-time mode active after seeding {N} samples (dt = {dt_value:g} s)" + freq_str
             )
         else:
             self.close_db_connection()
             self.status_label.setText(
-                f"Generated and saved {N} samples for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF} (connection closed)"
+                f"Generated and saved {N} samples for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF} (connection closed)" + freq_str
             )
 
     def _on_delete_measurements(self):
