@@ -246,7 +246,7 @@ class Model2d3d:
       for i in range(N):
         self.X = self.F@self.X + self.D*self.drift
         if i in control_index_set:
-            u = 1.e-11 #random.uniform(-1e-11, 1e-11)
+            u = random.uniform(-1e-11, 1e-11)
             u_controls.append(u)
             self.X[1] += u
         wpn = np.random.randn(1)*sq0
@@ -256,7 +256,7 @@ class Model2d3d:
         w = np.random.randn(self.nd-1)
         self.X = self.F@self.X + self.L@w + self.D*self.drift
         if i in control_index_set:
-            u = 1.e-11 #random.uniform(-1e-11, 1e-11)
+            u = random.uniform(-1e-11, 1e-11)
             u_controls.append(u)
             self.X[1] += u
         wpn = np.random.randn(1)*sq0
