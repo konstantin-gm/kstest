@@ -890,14 +890,33 @@ class KSTesterWindow(QMainWindow):
             return
 
         delete_sql = "DELETE FROM raw_phase WHERE pair_id IN (%s, %s)"
+        control_delete_sql_single = "DELETE FROM control WHERE signal_id = %s"
+
+        control_signal_ids = []
+        for key in ("ref", "meas1", "meas2"):
+            value = CONTROL_SIGNAL_IDS.get(key)
+            try:
+                signal_id_value = int(value)
+            except (TypeError, ValueError):
+                continue
+            control_signal_ids.append(signal_id_value)
 
         try:
             with self._connection.cursor() as cur:
                 cur.execute(delete_sql, (PAIR_ID_MEAS1_REF, PAIR_ID_MEAS2_REF))
+                for signal_id_value in control_signal_ids:
+                    cur.execute(control_delete_sql_single, (signal_id_value,))
             self._connection.commit()
-            self.status_label.setText(
-                f"Deleted measurements for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF}"
-            )
+            if control_signal_ids:
+                controls_txt = ", ".join(str(sid) for sid in control_signal_ids)
+                self.status_label.setText(
+                    f"Deleted measurements for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF}"
+                    f" and cleared control records for signal IDs {controls_txt}"
+                )
+            else:
+                self.status_label.setText(
+                    f"Deleted measurements for pair IDs {PAIR_ID_MEAS1_REF} & {PAIR_ID_MEAS2_REF}"
+                )
         except Exception as exc:  # pylint: disable=broad-except
             if self._connection is not None:
                 self._connection.rollback()
