@@ -1,0 +1,26 @@
+{
+  "start_datetime": "2025-09-27T17:09:19",
+  "stop_datetime": "2025-09-27T17:09:19",
+  "dt": "100",
+  "real_time": false,
+  "signals": {
+    "ref": {
+      "init_phase": "0",
+      "init_frequency": "0",
+      "frequency_drift": "0",
+      "controls": "0"
+    },
+    "meas1": {
+      "init_phase": "0",
+      "init_frequency": "0",
+      "frequency_drift": "0",
+      "controls": "0"
+    },
+    "meas2": {
+      "init_phase": "0",
+      "init_frequency": "0",
+      "frequency_drift": "0",
+      "controls": "0"
+    }
+  }
+}
