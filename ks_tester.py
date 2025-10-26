@@ -5,6 +5,7 @@ from pathlib import Path
 
 import numpy as np
 import psycopg2
+from psycopg2.extras import execute_values
 from psycopg2 import OperationalError
 from PyQt5.QtCore import QDateTime, Qt, QTimer
 from PyQt5.QtGui import QFont
@@ -415,11 +416,14 @@ class KSTesterWindow(QMainWindow):
             return True
 
         try:
+            # Add timeouts to avoid indefinite waiting on locks or slow network
             self._connection = psycopg2.connect(
                 host=DB_HOST,
                 database=DB_NAME,
                 user=DB_USER,
                 password=DB_PASSWORD,
+                connect_timeout=5,
+                options="-c statement_timeout=30000 -c lock_timeout=5000",
             )
             self.status_label.setText("Connected to spacedb")
             return True
@@ -839,6 +843,7 @@ class KSTesterWindow(QMainWindow):
 
         try:
             with self._connection.cursor() as cur:
+                # remove any existing data in the range first
                 cur.execute(
                     delete_sql,
                     (PAIR_ID_MEAS1_REF, start_range_meas1, end_range_meas1),
@@ -853,9 +858,27 @@ class KSTesterWindow(QMainWindow):
                             control_delete_sql,
                             (signal_id_value, range_start, range_end),
                         )
-                cur.executemany(insert_sql, records)
+
+                # Speed up massive inserts and avoid UI freeze by batching
+                cur.execute("SET LOCAL synchronous_commit = OFF")
+
+                if records:
+                    # INSERT INTO raw_phase (timestamp, phase, pair_id) VALUES %s
+                    execute_values(
+                        cur,
+                        "INSERT INTO raw_phase (timestamp, phase, pair_id) VALUES %s",
+                        records,
+                        page_size=1000,
+                    )
+
                 if control_records:
-                    cur.executemany(control_insert_sql, control_records)
+                    execute_values(
+                        cur,
+                        "INSERT INTO control (timestamp, u, signal_id) VALUES %s",
+                        control_records,
+                        page_size=1000,
+                    )
+
             self._connection.commit()
         except Exception as exc:  # pylint: disable=broad-except
             if self._connection is not None:

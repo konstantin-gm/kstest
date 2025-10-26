@@ -1,0 +1,20 @@
+{
+  "database": {
+    "host": "192.168.120.100",
+    "port": 5432,
+    "dbname": "spacedb",
+    "user": "postgres",
+    "password": ""
+  },
+  "queries": {
+    "raw_phase": {
+      "sql": "SELECT * FROM raw_phase WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "raw_phase.csv"
+    },
+    "pair": {
+      "sql": "SELECT * FROM pair",
+      "filename": "pair.csv"
+    }
+  },
+  "output_root": "/home/konstantin/db_export"
+}
