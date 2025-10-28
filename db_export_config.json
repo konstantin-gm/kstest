@@ -11,6 +11,14 @@
       "sql": "SELECT * FROM raw_phase WHERE timestamp BETWEEN %(start)s AND %(stop)s",
       "filename": "raw_phase.csv"
     },
+    "control": {
+      "sql": "SELECT * FROM control WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "control.csv"
+    },
+    "events": {
+      "sql": "SELECT * FROM events WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "events.csv"
+    },
     "pair": {
       "sql": "SELECT * FROM pair",
       "filename": "pair.csv"
