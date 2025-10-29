@@ -5,7 +5,7 @@ a = Analysis(
     ['db_export_gui.py'],
     pathex=[],
     binaries=[],
-    datas=[('db_export_config.json', '.')],
+    datas=[],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
