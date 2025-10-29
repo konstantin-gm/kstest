@@ -16,6 +16,7 @@ from PyQt5.QtCore import (
     QDateTime,
     QObject,
     QRunnable,
+    QSortFilterProxyModel,
     QThreadPool,
     QTimer,
     Qt,
@@ -24,6 +25,7 @@ from PyQt5.QtCore import (
 from PyQt5.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QDateTimeEdit,
     QDialog,
     QFileDialog,
@@ -36,6 +38,9 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QHeaderView,
+    QSizePolicy,
+    QScrollArea,
     QTableView,
     QTabWidget,
     QVBoxLayout,
@@ -274,6 +279,15 @@ class DataFrameModel(QAbstractTableModel):
         super().__init__()
         self._frame = frame
 
+    @staticmethod
+    def format_display(value) -> str:
+        if pd.isna(value):
+            return ""
+        return str(value)
+
+    def raw_value(self, row: int, column: int):
+        return self._frame.iat[row, column]
+
     def rowCount(self, parent=None):  # type: ignore[override]
         return len(self._frame.index)
 
@@ -285,9 +299,7 @@ class DataFrameModel(QAbstractTableModel):
             return None
         if role == Qt.DisplayRole:
             value = self._frame.iat[index.row(), index.column()]
-            if pd.isna(value):
-                return ""
-            return str(value)
+            return self.format_display(value)
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):  # type: ignore[override]
@@ -303,6 +315,43 @@ class DataFrameModel(QAbstractTableModel):
         return Qt.ItemIsEnabled | Qt.ItemIsSelectable
 
 
+class ValueFilterProxyModel(QSortFilterProxyModel):
+    def __init__(self, parent: Optional[QObject] = None):
+        super().__init__(parent)
+        self._column_filters: Dict[int, str] = {}
+
+    def set_column_filter(self, column: int, value: Optional[str]) -> None:
+        if value is None:
+            self._column_filters.pop(column, None)
+        else:
+            self._column_filters[column] = value
+        self.invalidateFilter()
+
+    def clear_filters(self) -> None:
+        if not self._column_filters:
+            return
+        self._column_filters.clear()
+        self.invalidateFilter()
+
+    def filterAcceptsRow(self, source_row: int, source_parent) -> bool:  # type: ignore[override]
+        source_model = self.sourceModel()
+        if source_model is None or not self._column_filters:
+            return True
+
+        if not isinstance(source_model, DataFrameModel):
+            return super().filterAcceptsRow(source_row, source_parent)
+
+        for column, expected in self._column_filters.items():
+            try:
+                raw_value = source_model.raw_value(source_row, column)
+            except IndexError:
+                return False
+            display_value = DataFrameModel.format_display(raw_value)
+            if display_value != expected:
+                return False
+        return True
+
+
 class DataFrameTableWindow(QDialog):
     def __init__(self, frame: pd.DataFrame, parent: Optional[QWidget] = None):
         super().__init__(parent)
@@ -310,14 +359,103 @@ class DataFrameTableWindow(QDialog):
         self.resize(900, 600)
         self.setAttribute(Qt.WA_DeleteOnClose, True)
 
-        layout = QVBoxLayout(self)
-        self.table_view = QTableView(self)
-        self.table_view.setSortingEnabled(True)
-        self.table_view.setAlternatingRowColors(True)
         self._model = DataFrameModel(frame)
-        self.table_view.setModel(self._model)
+        self._proxy = ValueFilterProxyModel(self)
+        self._proxy.setSourceModel(self._model)
+        self._filter_controls: List[QComboBox] = []
 
+        layout = QVBoxLayout(self)
+
+        self._filter_container = QWidget(self)
+        self._filter_container.setFixedHeight(80)
+        container_layout = QHBoxLayout(self._filter_container)
+        container_layout.setContentsMargins(6, 6, 6, 6)
+        container_layout.setSpacing(8)
+
+        self.filter_bar = QScrollArea(self._filter_container)
+        self.filter_bar.setWidgetResizable(True)
+        self.filter_bar.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.filter_bar.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._filter_content = QWidget(self.filter_bar)
+        self._filter_layout = QHBoxLayout(self._filter_content)
+        self._filter_layout.setContentsMargins(0, 0, 0, 0)
+        self._filter_layout.setSpacing(8)
+        self.filter_bar.setWidget(self._filter_content)
+
+        container_layout.addWidget(self.filter_bar)
+
+        self.table_view = QTableView(self)
+        self.table_view.setModel(self._proxy)
+        self.table_view.setAlternatingRowColors(True)
+        self.table_view.setSortingEnabled(True)
+        header = self.table_view.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.ResizeToContents)
+        self.table_view.resizeColumnsToContents()
+        header.setSectionResizeMode(QHeaderView.Interactive)
+        header.setStretchLastSection(True)
+
+        layout.addWidget(self._filter_container)
         layout.addWidget(self.table_view)
+
+        self._build_filter_controls(frame)
+
+    def _build_filter_controls(self, frame: pd.DataFrame) -> None:
+        if frame.empty:
+            return
+
+        for column_index, column_name in enumerate(frame.columns):
+            column_widget = QWidget(self._filter_content)
+            column_layout = QVBoxLayout(column_widget)
+            column_layout.setContentsMargins(0, 0, 0, 0)
+            column_layout.setSpacing(2)
+
+            title_label = QLabel(str(column_name), column_widget)
+            title_label.setWordWrap(True)
+            title_label.setContentsMargins(0, 0, 0, 0)
+            title_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+            title_label.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+            column_layout.addWidget(title_label)
+
+            combo = QComboBox(column_widget)
+            combo.setEditable(False)
+            combo.setSizeAdjustPolicy(QComboBox.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(6)
+            combo.setMaximumWidth(600)
+            combo.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            combo.setFixedHeight(28)
+            combo.addItem("Все", userData=None)
+
+            raw_unique_values = pd.unique(frame.iloc[:, column_index])
+            seen_display_values: Dict[str, str] = {}
+            for raw_value in raw_unique_values:
+                display_value = DataFrameModel.format_display(raw_value)
+                if display_value not in seen_display_values:
+                    seen_display_values[display_value] = display_value
+
+            # Sort values while keeping empty display at the top for readability.
+            sorted_display_values = sorted(
+                seen_display_values.values(),
+                key=lambda value: (value != "", value.lower()),
+            )
+            for display_value in sorted_display_values:
+                if display_value == "":
+                    combo.addItem("(пусто)", userData="")
+                else:
+                    combo.addItem(display_value, userData=display_value)
+
+            combo.currentIndexChanged.connect(
+                lambda _idx, col=column_index, widget=combo: self._on_filter_changed(col, widget)
+            )
+
+            column_layout.addWidget(combo)
+            self._filter_layout.addWidget(column_widget)
+            self._filter_controls.append(combo)
+
+        #self._filter_layout.addStretch()
+
+    def _on_filter_changed(self, column: int, combo: QComboBox) -> None:
+        selected_value = combo.currentData()
+        self._proxy.set_column_filter(column, selected_value)
 
 
 class ExportWindow(QMainWindow):

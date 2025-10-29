@@ -19,10 +19,78 @@
       "sql": "SELECT * FROM events WHERE timestamp BETWEEN %(start)s AND %(stop)s",
       "filename": "events.csv"
     },
+    "phases_1h": {
+      "sql": "SELECT * FROM phases_1h WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "phases_1h.csv"
+    },
+    "anomaly_x": {
+      "sql": "SELECT * FROM anomaly_x WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "anomaly_x.csv"
+    },
+    "anomaly_y": {
+      "sql": "SELECT * FROM anomaly_y WHERE timestamp BETWEEN %(start)s AND %(stop)s",
+      "filename": "anomaly_y.csv"
+    },
+    "parameters_history": {
+      "sql": "SELECT * FROM parameters_history WHERE time BETWEEN %(start)s AND %(stop)s",
+      "filename": "parameters_history.csv"
+    },
+    "control_inputs": {
+      "sql": "SELECT * FROM control_inputs",
+      "filename": "control_inputs.csv"
+    },
+    "device": {
+      "sql": "SELECT * FROM device",
+      "filename": "device.csv"
+    },
+    "event_level": {
+      "sql": "SELECT * FROM event_level",
+      "filename": "event_level.csv"
+    },
+    "event_state": {
+      "sql": "SELECT * FROM event_state",
+      "filename": "event_state.csv"
+    },
+    "current_parameters": {
+      "sql": "SELECT * FROM current_parameters",
+      "filename": "current_parameters.csv"
+    },
+    "measured_input": {
+      "sql": "SELECT * FROM measured_input",
+      "filename": "measured_input.csv"
+    },
+    "basis_input": {
+      "sql": "SELECT * FROM basis_input",
+      "filename": "basis_input.csv"
+    },
+    "amplifier_status": {
+      "sql": "SELECT * FROM amplifier_status",
+      "filename": "amplifier_status.csv"
+    },
+    "adjustable_device": {
+      "sql": "SELECT * FROM adjustable_device",
+      "filename": "adjustable_device.csv"
+    },
+    "autotune_settings": {
+      "sql": "SELECT * FROM autotune_settings",
+      "filename": "autotune_settings.csv"
+    },
+    "daemon_status": {
+      "sql": "SELECT * FROM daemon_status",
+      "filename": "daemon_status.csv"
+    },
+    "monitor_miscinfo": {
+      "sql": "SELECT * FROM monitor_miscinfo",
+      "filename": "monitor_miscinfo.csv"
+    },
     "pair": {
       "sql": "SELECT * FROM pair",
       "filename": "pair.csv"
+    },
+    "signal": {
+      "sql": "SELECT * FROM signal",
+      "filename": "signal.csv"
     }
   },
-  "output_root": "/home/konstantin/db_export"
+  "output_root": "./output"
 }
